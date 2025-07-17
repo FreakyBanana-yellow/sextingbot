@@ -1,80 +1,89 @@
-import { supabase } from '../supabase/client.js';
-import { uploadMedia } from '../utils/media.js';
+// src/handlers/modelHandler.js
 
-export default async function handleModelMessage(ctx, model) {
+import { supabase } from '../utils/supabase.js';
+import { createReadStream } from 'fs';
+import { randomUUID } from 'crypto';
+import path from 'path';
+import mime from 'mime-types';
+
+const modelStates = new Map(); // temporäre Infos zwischenspeichern (Szene, Caption etc.)
+
+export async function handleModelMessage(ctx, model) {
+  const chatId = ctx.message.chat.id;
   const message = ctx.message;
-  const state = {};
+  const modelId = model.id;
 
-  // Step 1: Text mit Szene & Reihenfolge auslesen (wenn vorhanden)
-  if (message.caption) {
-    const lower = message.caption.toLowerCase();
-    const sceneMatch = lower.match(/#scene:\s?([a-z0-9-_]+)/);
-    const seqMatch = lower.match(/#sequence:\s?(\d+)/);
+  // Befehle zum Setzen von Metadaten
+  if (message.text && message.text.startsWith('/')) {
+    const parts = message.text.split(' ');
+    const command = parts[0].toLowerCase();
+    const value = parts.slice(1).join(' ');
 
-    if (sceneMatch) state.scene = sceneMatch[1];
-    if (seqMatch) state.sequence = parseInt(seqMatch[1]);
-  }
+    const state = modelStates.get(chatId) || {};
 
-  // Step 2: Medien-Upload
-  if (message.photo || message.voice || message.video) {
-    const file = message.photo?.[message.photo.length - 1]
-      || message.voice
-      || message.video;
-
-    const fileId = file.file_id;
-    const fileType = message.voice ? 'audio' : message.video ? 'video' : 'image';
-
-    const { success, publicUrl } = await uploadMedia(fileId, fileType, model.id, ctx.telegram);
-
-    if (success) {
-      await supabase.from('media').insert({
-        model_id: model.id,
-        type: fileType,
-        url: publicUrl,
-        caption: message.caption || null,
-        scene: state.scene || 'default',
-        sequence: state.sequence || 0
-      });
-
-      await ctx.reply(`✅ ${fileType} gespeichert.\nSzene: ${state.scene || 'default'}\nReihenfolge: ${state.sequence || 0}`);
-    } else {
-      await ctx.reply('❌ Upload fehlgeschlagen.');
+    switch (command) {
+      case '/szene':
+        state.scene = value;
+        await ctx.reply(`Szene gesetzt auf: ${value}`);
+        break;
+      case '/caption':
+        state.caption = value;
+        await ctx.reply(`Caption gesetzt auf: ${value}`);
+        break;
+      case '/reihenfolge':
+        state.sequence = parseInt(value);
+        await ctx.reply(`Reihenfolge gesetzt auf: ${value}`);
+        break;
+      case '/auto_use':
+        state.auto_use = value === 'true';
+        await ctx.reply(`Auto-Use ist jetzt: ${value}`);
+        break;
+      default:
+        await ctx.reply('Unbekannter Befehl.');
     }
+
+    modelStates.set(chatId, state);
     return;
   }
 
-  // Likes, Dislikes, Prompt wie gehabt...
-  if (message.text?.startsWith('#likes:')) {
-    const likes = message.text.replace('#likes:', '').split(',').map(x => x.trim());
-    await supabase.from('models').update({ likes }).eq('id', model.id);
-    await ctx.reply('✅ Vorlieben gespeichert.');
-    return;
+  // Medienupload
+  const file = message.photo?.at(-1) || message.video || message.voice || null;
+  if (!file) return ctx.reply('Bitte sende ein Foto, Video oder eine Sprachnachricht.');
+
+  const fileId = file.file_id;
+  const fileLink = await ctx.telegram.getFileLink(fileId);
+  const ext = mime.extension(file.mime_type || 'image/jpeg');
+  const filename = `${randomUUID()}.${ext}`;
+  const fileRes = await fetch(fileLink.href);
+  const arrayBuffer = await fileRes.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const upload = await supabase.storage.from('model_media').upload(filename, buffer, {
+    contentType: file.mime_type || 'image/jpeg',
+    upsert: false
+  });
+
+  if (upload.error) {
+    console.error(upload.error);
+    return ctx.reply('Fehler beim Upload');
   }
 
-  if (message.text?.startsWith('#dislikes:')) {
-    const dislikes = message.text.replace('#dislikes:', '').split(',').map(x => x.trim());
-    await supabase.from('models').update({ dislikes }).eq('id', model.id);
-    await ctx.reply('✅ Tabus gespeichert.');
-    return;
-  }
+  const url = supabase.storage.from('model_media').getPublicUrl(filename).data.publicUrl;
 
-  if (message.text?.startsWith('#prompt:')) {
-    const prompt = message.text.replace('#prompt:', '').trim();
-    await supabase.from('models').update({ persona_prompt: prompt }).eq('id', model.id);
-    await ctx.reply('✅ GPT-Charakter aktualisiert.');
-    return;
-  }
+  const meta = modelStates.get(chatId) || {};
+  const { scene = null, caption = null, sequence = null, auto_use = false } = meta;
 
-  // Hilfe
-  await ctx.reply(`Hi ${model.name} 😘\n\nDu kannst mir Inhalte schicken wie:
-📸 *Medien* mit Beschreibung wie z. B.:
-  • \`#scene: strip\`
-  • \`#sequence: 2\`
-  (→ Ich ziehe mein Shirt aus…)
+  await supabase.from('media').insert({
+    model_id: modelId,
+    type: message.photo ? 'image' : message.video ? 'video' : 'voice',
+    url,
+    caption,
+    auto_use,
+    created_at: new Date().toISOString(),
+    scene,
+    sequence,
+    used: false
+  });
 
-💬 *Einstellungen:*
-  • \`#likes: Küssen, Flüstern\`
-  • \`#dislikes: Analsex\`
-  • \`#prompt: Ich bin eine dominante Latina…\`
-`, { parse_mode: 'Markdown' });
+  await ctx.reply('✅ Datei erfolgreich gespeichert.');
 }
