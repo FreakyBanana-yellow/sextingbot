@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function askGPT(userInput, model) {
   const persona = model.persona_prompt || `Du bist ${model.name}, ein verspieltes Model…`;

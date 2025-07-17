@@ -14,4 +14,4 @@ Ermöglicht Usern, mit einem sexy „digitalen Model“ zu chatten – inkl. GPT
 → via Railway mit Umgebungsvariablen:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `OPENAI_KEY`
+- `OPENAI_API_KEY`
