@@ -1,14 +1,12 @@
 // src/handlers/modelHandler.js
 
 import { supabase } from '../utils/supabase.js';
-import { createReadStream } from 'fs';
 import { randomUUID } from 'crypto';
-import path from 'path';
 import mime from 'mime-types';
 
 const modelStates = new Map(); // temporäre Infos zwischenspeichern (Szene, Caption etc.)
 
-export async function handleModelMessage(ctx, model) {
+async function handleModelMessage(ctx, model) {
   const chatId = ctx.message.chat.id;
   const message = ctx.message;
   const modelId = model.id;
@@ -87,3 +85,6 @@ export async function handleModelMessage(ctx, model) {
 
   await ctx.reply('✅ Datei erfolgreich gespeichert.');
 }
+
+// ⬇⬇⬇ Export muss **außerhalb** der Funktion stehen:
+export default handleModelMessage;
