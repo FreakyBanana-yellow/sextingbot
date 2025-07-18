@@ -1,20 +1,35 @@
 import { generateReply } from '../utils/gpt.js';
+import { supabase } from '../utils/supabase.js';
 
-export async function handleUserMessage(ctx, user, model) {
-  const text = ctx.message?.text;
-  if (!text) return;
+export async function handleUserMessage(ctx, model) {
+  const chatId = ctx.message.chat.id;
+  const username = ctx.message.from?.username || 'Unbekannt';
+  const inputText = ctx.message.text;
+
+  if (!inputText || inputText.startsWith('/')) return;
 
   try {
-    // ⌨️ Bot zeigt "schreibt..."
-    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
+    // 🕒 Bot "schreibt..."-Indikator
+    await ctx.sendChatAction('typing');
 
-    // GPT-Antwort generieren
-    const reply = await generateReply(user, text, model);
+    // 🔥 GPT-Antwort erzeugen
+    const reply = await generateReply(inputText, model);
 
-    // Antwort senden
+    // 💬 Antwort senden
     await ctx.reply(reply);
-  } catch (err) {
-    console.error('❌ GPT-Antwort fehlgeschlagen:', err);
-    await ctx.reply('⚠️ Da ging was schief... Versuch’s gleich nochmal 😬');
+
+    // 📊 Optional: Logging in Supabase
+    await supabase.from('conversations').insert({
+      model_id: model.id,
+      user_id: chatId.toString(),
+      username: username,
+      input: inputText,
+      output: reply,
+      created_at: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Fehler im userHandler:', error.message);
+    await ctx.reply('🥺 Da ist gerade was schiefgelaufen… versuch es bitte nochmal.');
   }
 }
