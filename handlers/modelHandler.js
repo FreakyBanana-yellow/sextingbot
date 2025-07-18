@@ -8,6 +8,7 @@ export async function handleModelMessage(ctx, model) {
   const chatId = ctx.message.chat.id;
   const message = ctx.message;
   const modelId = model.id;
+
   const file = message.photo?.at(-1) || message.video || message.voice || null;
 
   // === TEXTBASIERTE BEFEHLE ===
@@ -38,7 +39,7 @@ Beispiel: \`/reihenfolge 2\`
 ⚙️ \`/auto_use true\` oder \`/auto_use false\`  
 → Entscheidet, ob das Medium später automatisch vom Bot verwendet werden darf.
 
-🗂 \`/media\`  
+📁 \`/media\`  
 → Zeigt deine letzten hochgeladenen Medien mit allen Infos & Lösch-Buttons.
 
 ℹ️ Du kannst einfach ein *Bild*, *Video* oder eine *Sprachnachricht* schicken – alles wird direkt gespeichert, inklusive Szene und Caption.
@@ -67,7 +68,7 @@ Beispiel: \`/reihenfolge 2\`
         await ctx.reply(`⚙️ Auto-Use ist jetzt: ${state.auto_use ? 'aktiviert' : 'deaktiviert'}`);
         break;
 
-      case '/media': {
+      case '/media':
         const { data, error } = await supabase
           .from('media')
           .select('*')
@@ -81,11 +82,17 @@ Beispiel: \`/reihenfolge 2\`
         }
 
         for (const item of data) {
-          const captionText = `🖼 *Typ:* ${item.type}\n📝 *Caption:* ${item.caption || '–'}\n🎬 *Szene:* ${item.scene || '–'}\n🔁 *Auto-Use:* ${item.auto_use ? '✅' : '❌'}\n🕒 *Erstellt:* ${new Date(item.created_at).toLocaleString('de-DE')}`;
+          const captionText = `🖼 *Typ:* ${item.type}
+📝 *Caption:* ${item.caption || '–'}
+🎬 *Szene:* ${item.scene || '–'}
+🔁 *Auto-Use:* ${item.auto_use ? '✅' : '❌'}
+🕒 *Erstellt:* ${new Date(item.created_at).toLocaleString('de-DE')}`;
 
           const buttons = {
             reply_markup: {
-              inline_keyboard: [[{ text: '🗑 Löschen', callback_data: `delete_${item.id}` }]]
+              inline_keyboard: [[
+                { text: '🗑 Löschen', callback_data: `delete_${item.id}` }
+              ]]
             },
             parse_mode: 'Markdown'
           };
@@ -99,7 +106,6 @@ Beispiel: \`/reihenfolge 2\`
           }
         }
         break;
-      }
 
       default:
         await ctx.reply('❓ Unbekannter Befehl.');
@@ -112,38 +118,53 @@ Beispiel: \`/reihenfolge 2\`
   // === MEDIEN-UPLOAD ===
   if (!file) return ctx.reply('❗ Bitte sende ein Foto, Video oder eine Sprachnachricht.');
 
-  const fileId = file.file_id;
-  const fileLink = await ctx.telegram.getFileLink(fileId);
-  const ext = mime.extension(file.mime_type || 'image/jpeg');
-  const filename = `${randomUUID()}.${ext}`;
-  const fileRes = await fetch(fileLink.href);
-  const buffer = Buffer.from(await fileRes.arrayBuffer());
+  try {
+    const fileId = file.file_id;
+    const telegramFile = await ctx.telegram.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${telegramFile.file_path}`;
 
-  const upload = await supabase.storage.from('model_media').upload(filename, buffer, {
-    contentType: file.mime_type || 'image/jpeg',
-    upsert: false
-  });
+    const response = await fetch(fileUrl);
+    const buffer = Buffer.from(await response.arrayBuffer());
 
-  if (upload.error) {
-    console.error(upload.error);
-    return ctx.reply('❌ Upload fehlgeschlagen.');
+    const mimeType = file.mime_type || 'image/jpeg';
+    const ext = mime.extension(mimeType) || 'jpg';
+    const filename = `${randomUUID()}.${ext}`;
+
+    const upload = await supabase.storage
+      .from('model-media')
+      .upload(filename, buffer, {
+        contentType: mimeType,
+        upsert: false,
+      });
+
+    if (upload.error) {
+      console.error(upload.error);
+      return ctx.reply('❌ Upload fehlgeschlagen beim Speichern.');
+    }
+
+    const publicUrl = supabase
+      .storage
+      .from('model-media')
+      .getPublicUrl(filename).data.publicUrl;
+
+    const meta = modelStates.get(chatId) || {};
+    const { scene = null, caption = null, sequence = null, auto_use = false } = meta;
+
+    await supabase.from('media').insert({
+      model_id: modelId,
+      type: message.photo ? 'image' : message.video ? 'video' : 'voice',
+      url: publicUrl,
+      caption,
+      auto_use,
+      created_at: new Date().toISOString(),
+      scene,
+      sequence,
+      used: false,
+    });
+
+    await ctx.reply('✅ Datei gespeichert!');
+  } catch (err) {
+    console.error('❌ Fehler beim Upload:', err);
+    await ctx.reply('❌ Upload fehlgeschlagen. Bitte nochmal versuchen.');
   }
-
-  const publicUrl = supabase.storage.from('model_media').getPublicUrl(filename).data.publicUrl;
-  const meta = modelStates.get(chatId) || {};
-  const { scene = null, caption = null, sequence = null, auto_use = false } = meta;
-
-  await supabase.from('media').insert({
-    model_id: modelId,
-    type: message.photo ? 'image' : message.video ? 'video' : 'voice',
-    url: publicUrl,
-    caption,
-    auto_use,
-    created_at: new Date().toISOString(),
-    scene,
-    sequence,
-    used: false
-  });
-
-  await ctx.reply('✅ Datei gespeichert!');
 }
