@@ -12,9 +12,9 @@ export function applyRouter(bot, model) {
     if (!userId) return;
 
     // Model?
-    if (model?.telegram_id === userId) {
-      return await handleModelMessage(ctx, model);
-    }
+    if (String(model?.telegram_id) === String(userId)) {
+  return await handleModelMessage(ctx, model);
+}
 
     // User?
     const user = await getUserByTelegramId(userId);

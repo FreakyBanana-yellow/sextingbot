@@ -7,6 +7,7 @@ export default async function startBot(config) {
   const bot = new Telegraf(config.botToken);
 
   const model = await getModelByBotToken(config.botToken);
+  console.log('Model geladen:', model);
   if (!model) {
     console.error(`❌ Kein Model gefunden für Token: ${config.botToken}`);
     return;
