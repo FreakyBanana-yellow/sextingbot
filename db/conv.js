@@ -1,4 +1,4 @@
-import { supabase } from './supabase.js';
+import { supabase } from '../utils/supabase.js';
 
 export async function getRecentMessages(user_id, model_id, limit = 10) {
   const { data, error } = await supabase
