@@ -1,45 +1,62 @@
+// utils/gpt.js
+
 import OpenAI from 'openai';
+import { getConversationHistory } from '../db/conversation.js';
+import { getMediaForModel } from '../db/media.js';
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
- * Fragt GPT mit dynamischer Persona aus DB.
- * @param {string} userInput – Die Nachricht vom User
- * @param {object} model – Das Model-Objekt aus der Datenbank
+ * Dynamische GPT-Antwort mit Gesprächsverlauf, Persona & Medien.
+ * @param {string} userInput – Die aktuelle Nachricht des Users
+ * @param {object} model – Model-Datenbankobjekt (mit likes, dislikes etc.)
+ * @param {string} userId – Telegram-User-ID zur Abfrage des bisherigen Verlaufs
  * @returns {string} – GPT-Antwort
  */
-export async function generateReply(userInput, model) {
+export async function generateReply(userInput, model, userId) {
   try {
-    const {
-      name = 'Luna',
-      persona_prompt = '',
-      likes = [],
-      dislikes = [],
-      last_scene = 'neutral'
-    } = model;
+    // Gesprächsverlauf abrufen (letzte 6 Nachrichten)
+    const history = await getConversationHistory(userId, 6);
 
-    // Build System-Prompt dynamisch
-    const systemPrompt = `
-${persona_prompt || `Du bist ${name}, ein erotisches Model mit viel Fantasie.`}
-👄 Szene: "${last_scene}"
-💖 Vorlieben: ${likes.join(', ') || 'keine Angabe'}
-🙅‍♀️ Abneigungen: ${dislikes.join(', ') || 'keine Angabe'}
-Sprich immer sexy, offen und spielerisch. Verwende passende Sprache und Reaktionen. 
-Wenn der Nutzer nach einem Bild fragt, kannst du ein gespeichertes Bild aus der Szene vorschlagen (aber du sendest es nicht selbst).
-`.trim();
+    // System-Prompt dynamisch aus DB-Werten
+    const persona = model.persona_prompt || `Du bist ${model.name}, ein verspieltes Camgirl mit erotischer Fantasie.`;
+    const likes = model.likes?.join(', ') || 'Dirty Talk';
+    const dislikes = model.dislikes?.join(', ') || 'Respektlosigkeit';
 
-    // Anfrage an GPT
+    const systemPrompt = `${persona}
+Deine Vorlieben: ${likes}.
+Was du nicht magst: ${dislikes}.
+Reagiere liebevoll, verspielt und erotisch – aber menschlich.`;
+
+    // Nachrichtenverlauf aufbauen
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history.map((msg) => ({ role: msg.role, content: msg.content })),
+      { role: 'user', content: userInput },
+    ];
+
+    // GPT-Antwort generieren
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userInput }
-      ]
+      messages,
     });
 
-    return completion.choices[0].message.content.trim();
+    let reply = completion.choices[0].message.content.trim();
 
+    // Bildauswahl (optional): Wenn gefragt wurde
+    if (/(bild|foto|pic|zeigen).*\?/i.test(userInput)) {
+      const media = await getMediaForModel(model.id);
+      if (media && media.length > 0) {
+        const randomMedia = media[Math.floor(Math.random() * media.length)];
+        reply += `\n\n📸 <img src="${randomMedia.url}" alt="${randomMedia.caption}" />`;
+      } else {
+        reply += `\n\n⚠️ Ich habe leider noch keine Bilder hinterlegt.`;
+      }
+    }
+
+    return reply;
   } catch (error) {
     console.error('❌ GPT-Fehler:', error.message);
-    return '💬 Ups… da ging was schief. Versuch es gleich nochmal, bitte 😅';
+    return '💬 Uuups... da ist mir was durchgerutscht. Versuch es nochmal 😉';
   }
 }
