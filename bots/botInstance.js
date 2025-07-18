@@ -31,7 +31,7 @@ export default async function startBot(config) {
       const userId = ctx.from?.id;
 
       if (String(model.telegram_id) === String(userId)) {
-        return ctx.reply(`✨ Willkommen zurück, ${model.name}! Du kannst jetzt Szenen setzen, Captions einfügen oder Medien senden.`);
+        return ctx.reply(`✨ Willkommen zurück, ${model.name}! Du kannst jetzt Szenen setzen, Captions einfügen oder Medien senden. mit /hilfe kannst du alle Befehle dir anzeigen lassen.`);
       }
 
       const user = await getUserByTelegramId(userId);

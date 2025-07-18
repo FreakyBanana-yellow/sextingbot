@@ -8,7 +8,6 @@ export async function handleModelMessage(ctx, model) {
   const chatId = ctx.message.chat.id;
   const message = ctx.message;
   const modelId = model.id;
-
   const file = message.photo?.at(-1) || message.video || message.voice || null;
 
   // === TEXTBASIERTE BEFEHLE ===
@@ -18,23 +17,57 @@ export async function handleModelMessage(ctx, model) {
     const state = modelStates.get(chatId) || {};
 
     switch (cmd.toLowerCase()) {
+      case '/hilfe':
+        await ctx.replyWithMarkdown(`
+🧠 *Model-Befehle Übersicht*
+
+Als Model kannst du dem Bot folgende Befehle senden, um deine Inhalte zu verwalten:
+
+🎬 \`/szene [Titel]\`  
+→ Setzt das Thema oder die Rolle für die nächsten Medien.  
+Beispiel: \`/szene Duschspiel mit Toys\`
+
+🖊 \`/caption [Text]\`  
+→ Speichert einen sexy Beschreibungstext.  
+Beispiel: \`/caption Ganz frisch für dich aufgenommen 😘\`
+
+🔢 \`/reihenfolge [Zahl]\`  
+→ Legt fest, wann das Medium im Ablauf erscheinen soll.  
+Beispiel: \`/reihenfolge 2\`
+
+⚙️ \`/auto_use true\` oder \`/auto_use false\`  
+→ Entscheidet, ob das Medium später automatisch vom Bot verwendet werden darf.
+
+🗂 \`/media\`  
+→ Zeigt deine letzten hochgeladenen Medien mit allen Infos & Lösch-Buttons.
+
+ℹ️ Du kannst einfach ein *Bild*, *Video* oder eine *Sprachnachricht* schicken – alles wird direkt gespeichert, inklusive Szene und Caption.
+
+❓ Wenn du nochmal nachsehen willst, sende einfach \`/hilfe\`
+        `);
+        break;
+
       case '/szene':
         state.scene = value;
         await ctx.reply(`🎬 Szene gesetzt: *${value}*`, { parse_mode: 'Markdown' });
         break;
+
       case '/caption':
         state.caption = value;
         await ctx.reply(`🖊️ Caption gespeichert.`, { parse_mode: 'Markdown' });
         break;
+
       case '/reihenfolge':
         state.sequence = parseInt(value);
         await ctx.reply(`🔢 Reihenfolge: ${value}`);
         break;
+
       case '/auto_use':
         state.auto_use = value === 'true';
         await ctx.reply(`⚙️ Auto-Use ist jetzt: ${state.auto_use ? 'aktiviert' : 'deaktiviert'}`);
         break;
-      case '/media':
+
+      case '/media': {
         const { data, error } = await supabase
           .from('media')
           .select('*')
@@ -48,17 +81,11 @@ export async function handleModelMessage(ctx, model) {
         }
 
         for (const item of data) {
-          const captionText = `🖼 *Typ:* ${item.type}
-📝 *Caption:* ${item.caption || '–'}
-🎬 *Szene:* ${item.scene || '–'}
-🔁 *Auto-Use:* ${item.auto_use ? '✅' : '❌'}
-🕒 *Erstellt:* ${new Date(item.created_at).toLocaleString('de-DE')}`;
+          const captionText = `🖼 *Typ:* ${item.type}\n📝 *Caption:* ${item.caption || '–'}\n🎬 *Szene:* ${item.scene || '–'}\n🔁 *Auto-Use:* ${item.auto_use ? '✅' : '❌'}\n🕒 *Erstellt:* ${new Date(item.created_at).toLocaleString('de-DE')}`;
 
           const buttons = {
             reply_markup: {
-              inline_keyboard: [[
-                { text: '🗑 Löschen', callback_data: `delete_${item.id}` }
-              ]]
+              inline_keyboard: [[{ text: '🗑 Löschen', callback_data: `delete_${item.id}` }]]
             },
             parse_mode: 'Markdown'
           };
@@ -72,6 +99,8 @@ export async function handleModelMessage(ctx, model) {
           }
         }
         break;
+      }
+
       default:
         await ctx.reply('❓ Unbekannter Befehl.');
     }
