@@ -1,20 +1,32 @@
 import { Telegraf } from 'telegraf';
-import handleUserMessage from '../handlers/userHandler.js';
-import handleModelMessage from '../handlers/modelHandler.js';
+import { router } from '../router.js';
+import { getModelByBotToken } from '../utils/supabase.js';
 
-export default function startBot(model) {
-  const bot = new Telegraf(model.bot_token);
+export default async function startBot({ botToken }) {
+  const bot = new Telegraf(botToken);
 
-  bot.on('message', async (ctx) => {
-    const senderId = ctx.from.id.toString();
+  const model = await getModelByBotToken(botToken);
+  if (!model) {
+    console.error(`❌ Kein Model gefunden für Token ${botToken}`);
+    return;
+  }
 
-    if (senderId === model.telegram_id) {
-      await handleModelMessage(ctx, model);
+  console.log(`✅ Bot gestartet: ${model.name} (${model.bot_username})`);
+
+  // /start explizit abfangen
+  bot.start(async (ctx) => {
+    const isModel = String(ctx.from.id) === model.telegram_id;
+    if (isModel) {
+      await ctx.reply(`Willkommen zurück, ${model.name} 😎`);
     } else {
-      await handleUserMessage(ctx, model);
+      await ctx.reply(`Hey, ich bin ${model.name} 😘 Schreib mir, was du willst…`);
     }
   });
 
+  // alle Nachrichten gehen durch Router
+  bot.on('message', async (ctx) => {
+    await router(ctx, model);
+  });
+
   bot.launch();
-  console.log(`✅ Bot gestartet: ${model.name} (${model.bot_username})`);
 }
