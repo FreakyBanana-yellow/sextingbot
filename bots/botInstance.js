@@ -1,32 +1,22 @@
 import { Telegraf } from 'telegraf';
-import { router } from '../router.js';
 import { getModelByBotToken } from '../utils/supabase.js';
+import { applyRouter } from '../router.js';
 
-export default async function startBot({ botToken }) {
-  const bot = new Telegraf(botToken);
+export default async function startBot(config) {
+  const bot = new Telegraf(config.botToken);
 
-  const model = await getModelByBotToken(botToken);
+  const model = await getModelByBotToken(config.botToken);
   if (!model) {
-    console.error(`❌ Kein Model gefunden für Token ${botToken}`);
+    console.error(`❌ Kein Model gefunden für Token: ${config.botToken}`);
     return;
   }
 
-  console.log(`✅ Bot gestartet: ${model.name} (${model.bot_username})`);
+  // 🧠 Bot-spezifische Infos ins Model speichern
+  model.supabase = supabase; // falls gebraucht
+  model.username = config.botUsername;
 
-  // /start explizit abfangen
-  bot.start(async (ctx) => {
-    const isModel = String(ctx.from.id) === model.telegram_id;
-    if (isModel) {
-      await ctx.reply(`Willkommen zurück, ${model.name} 😎`);
-    } else {
-      await ctx.reply(`Hey, ich bin ${model.name} 😘 Schreib mir, was du willst…`);
-    }
-  });
-
-  // alle Nachrichten gehen durch Router
-  bot.on('message', async (ctx) => {
-    await router(ctx, model);
-  });
+  applyRouter(bot, model);
 
   bot.launch();
+  console.log(`✅ Bot gestartet: ${config.botUsername}`);
 }
