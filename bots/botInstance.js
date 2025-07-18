@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { getModelByBotToken } from '../utils/supabase.js';
 import { applyRouter } from '../router.js';
+import { supabase } from '../utils/supabase.js';
 
 export default async function startBot(config) {
   const bot = new Telegraf(config.botToken);

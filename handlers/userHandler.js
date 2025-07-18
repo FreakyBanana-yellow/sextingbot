@@ -1,20 +1,13 @@
-import { askGPT } from '../utils/gpt.js';
+export async function handleUserMessage(ctx, user, model) {
+  const message = ctx.message;
 
-export async function handleUserMessage(ctx, model) {
-  const chatId = ctx.message.chat.id;
-  const text = ctx.message.text || '';
-
-  // optional: Tipp-Indikator setzen
-  await ctx.telegram.sendChatAction(chatId, 'typing');
-
-  try {
-    const gptResponse = await askGPT(text, model);
-
-    await ctx.reply(gptResponse, {
+  // Einfacher Einstieg
+  if (message.text?.toLowerCase() === '/start') {
+    return ctx.reply(`Hey 😘 Willkommen bei *${model.bot_name || model.username}*!\nWas möchtest du heute erleben?`, {
       parse_mode: 'Markdown'
     });
-  } catch (error) {
-    console.error('GPT-Fehler:', error);
-    await ctx.reply('Uuups 😅 Da lief was schief...');
   }
+
+  // Default-Verhalten (kann erweitert werden)
+  await ctx.reply('💬 Ich leite deine Nachricht weiter… Bald bekommst du eine heiße Antwort 😏');
 }
