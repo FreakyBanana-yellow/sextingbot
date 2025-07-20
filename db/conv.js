@@ -1,6 +1,11 @@
 import { supabase } from '../utils/supabase.js';
 
 export async function getRecentMessages(user_id, model_id, limit = 10) {
+  if (!user_id || !model_id) {
+    console.error('❌ Ungültige IDs für Chatverlauf:', { user_id, model_id });
+    return [];
+  }
+
   const { data, error } = await supabase
     .from('conversations')
     .select('*')
@@ -17,12 +22,18 @@ export async function getRecentMessages(user_id, model_id, limit = 10) {
   return data;
 }
 
-export async function saveMessage(user_id, model_id, message, is_from_user = true) {
+export async function saveMessage(user_id, model_id, message, from_user = true) {
+  if (!user_id || !model_id) {
+    console.error('❌ user_id oder model_id ist undefined. Nachricht wird nicht gespeichert.');
+    return;
+  }
+
   const { error } = await supabase.from('conversations').insert({
     user_id,
     model_id,
     message,
-    is_from_user
+    from_user, // ✅ richtige Spalte
+    created_at: new Date(),
   });
 
   if (error) {
