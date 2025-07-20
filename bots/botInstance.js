@@ -44,7 +44,7 @@ export default async function startBot(config) {
 
     // Router (Message & Callback Handling)
     applyRouter(bot, model);
-
+await bot.telegram.deleteWebhook();
     await bot.launch();
     console.log(`✅ Bot gestartet: ${model.bot_name} (${config.botUsername})`);
   } catch (err) {
