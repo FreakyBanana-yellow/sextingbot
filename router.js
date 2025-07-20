@@ -2,6 +2,7 @@ import { handleModelMessage } from './handlers/modelHandler.js';
 import { handleUserMessage } from './handlers/userHandler.js';
 import { getModelByTelegramId, getUserByTelegramId } from './utils/supabase.js';
 import { uploadMedia } from './utils/media.js';
+import { getNextMediaInSequence } from './utils/mediaSelector.js';
 
 /**
  * Diese Funktion bindet alle Router-Funktionen an einen Bot
@@ -13,6 +14,7 @@ export function applyRouter(bot, model) {
     if (!userId) return;
 
     const isModel = String(model?.telegram_id) === String(userId);
+    const msgText = ctx.message?.text?.toLowerCase() || '';
 
     // === 📸 Upload-Funktion für Models ===
     if (isModel && (ctx.message.photo || ctx.message.video)) {
@@ -27,6 +29,26 @@ export function applyRouter(bot, model) {
         await ctx.reply(`✅ Hochgeladen! Bereit zur Nutzung.\nPfad: ${result.file_url}`);
       } else {
         await ctx.reply('❌ Upload fehlgeschlagen. Bitte versuch es später erneut.');
+      }
+
+      return;
+    }
+
+    // === 📷 Nutzer fragt nach einem Bild ===
+    if (!isModel && msgText.includes('kannst du mir ein bild schicken')) {
+      const media = await getNextMediaInSequence(model.id);
+
+      if (!media || !media.signedUrl) {
+        return ctx.reply('📭 Es ist leider kein Bild verfügbar.');
+      }
+
+      try {
+        await ctx.replyWithPhoto(media.signedUrl, {
+          caption: media.caption || '💋 Nur für dich…',
+        });
+      } catch (err) {
+        console.error('❌ Fehler beim Senden des Bildes:', err);
+        await ctx.reply('⚠️ Fehler beim Senden des Bildes.');
       }
 
       return;
