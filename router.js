@@ -1,14 +1,61 @@
+// Neue `router.js` mit Szenenauswahl
 import { handleModelMessage } from './handlers/modelHandler.js';
 import { handleUserMessage } from './handlers/userHandler.js';
-import { getModelByTelegramId, getUserByTelegramId } from './utils/supabase.js';
+import { getModelByTelegramId, getUserByTelegramId, supabase } from './utils/supabase.js';
 import { uploadMedia } from './utils/media.js';
 import { getNextMediaInSequence } from './utils/mediaSelector.js';
 
-/**
- * Diese Funktion bindet alle Router-Funktionen an einen Bot
- */
 export function applyRouter(bot, model) {
-  // Eingehende Textnachrichten & Medien
+  // /start Befehl - Szene auswählen
+  bot.command('start', async (ctx) => {
+    const { data: scenesRaw } = await supabase
+      .from('media')
+      .select('scene')
+      .eq('model_id', model.id)
+      .eq('auto_use', true)
+      .neq('scene', '');
+
+    const scenes = [...new Set(scenesRaw.map((s) => s.scene))];
+    scenes.push('Standard');
+
+    const keyboard = scenes.map((scene) => [{ text: scene, callback_data: `scene:${scene}` }]);
+    await ctx.reply('💡 Wähle eine Szene für den Chat:', {
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  });
+
+  // Szene setzen über Button
+  bot.on('callback_query', async (ctx) => {
+    const data = ctx.callbackQuery?.data;
+    if (!data?.startsWith('scene:')) return;
+
+    const scene = data.split(':')[1];
+    const userId = ctx.from.id;
+
+    const { data: existing } = await supabase
+      .from('users')
+      .select('*')
+      .eq('telegram_id', userId)
+      .single();
+
+    if (existing) {
+      await supabase.from('users').update({ current_scene: scene }).eq('telegram_id', userId);
+    } else {
+      await supabase.from('users').insert([{ telegram_id: userId, current_scene: scene }]);
+    }
+
+    await ctx.answerCbQuery(`Szene "${scene}" aktiviert.`);
+    await ctx.reply(`🌀 Du bist jetzt in der Szene: *${scene}*`, { parse_mode: 'Markdown' });
+  });
+
+  // Szene zurücksetzen mit /restart
+  bot.command('restart', async (ctx) => {
+    const userId = ctx.from.id;
+    await supabase.from('users').update({ current_scene: null }).eq('telegram_id', userId);
+    await ctx.reply('🔁 Szene zurückgesetzt. Starte neu mit /start');
+  });
+
+  // Nachrichtenverarbeitung
   bot.on('message', async (ctx) => {
     const userId = ctx.message?.from?.id;
     if (!userId) return;
@@ -16,93 +63,38 @@ export function applyRouter(bot, model) {
     const isModel = String(model?.telegram_id) === String(userId);
     const msgText = ctx.message?.text?.toLowerCase() || '';
 
-    // === 📸 Upload-Funktion für Models ===
+    // Upload durch Model
     if (isModel && (ctx.message.photo || ctx.message.video)) {
       const file = ctx.message.photo?.at(-1) || ctx.message.video;
       const type = ctx.message.photo ? 'image' : 'video';
 
       await ctx.reply('⏳ Lade Medium hoch...');
-
       const result = await uploadMedia(file.file_id, type, model.id, ctx.telegram);
 
       if (result.success) {
-        await ctx.reply(`✅ Hochgeladen! Bereit zur Nutzung.\nPfad: ${result.file_url}`);
+        await ctx.reply(`✅ Hochgeladen! Pfad: ${result.file_url}`);
       } else {
-        await ctx.reply('❌ Upload fehlgeschlagen. Bitte versuch es später erneut.');
+        await ctx.reply('❌ Upload fehlgeschlagen.');
       }
-
       return;
     }
 
-    // === 📷 Nutzer fragt nach einem Bild ===
-    if (!isModel && msgText.includes('kannst du mir ein bild schicken')) {
-      const media = await getNextMediaInSequence(model.id);
+    // Nutzerbild explizit anfordern
+    if (!isModel && msgText.includes('bild')) {
+      const user = await getUserByTelegramId(userId);
+      const scene = user?.current_scene || 'default';
+      const media = await getNextMediaInSequence(model.id, scene);
 
-      if (!media || !media.signedUrl) {
-        return ctx.reply('📭 Es ist leider kein Bild verfügbar.');
-      }
-
-      try {
-        await ctx.replyWithPhoto(media.signedUrl, {
-          caption: media.caption || '💋 Nur für dich…',
-        });
-      } catch (err) {
-        console.error('❌ Fehler beim Senden des Bildes:', err);
-        await ctx.reply('⚠️ Fehler beim Senden des Bildes.');
-      }
-
+      if (!media?.signedUrl) return ctx.reply('📭 Kein Bild verfügbar.');
+      await ctx.replyWithPhoto(media.signedUrl, { caption: media.caption || '📸' });
       return;
     }
 
-    // === Model (Textnachricht, z. B. Anweisung) ===
-    if (isModel) {
-      return await handleModelMessage(ctx, model);
-    }
+    if (isModel) return await handleModelMessage(ctx, model);
 
-    // === User ===
     const user = await getUserByTelegramId(userId);
-    if (user) {
-      return await handleUserMessage(ctx, user, model);
-    }
+    if (user) return await handleUserMessage(ctx, user, model);
 
     await ctx.reply('👀 Du bist weder als Model noch als User bekannt.');
-  });
-
-  // === /upload explizit aufrufbar ===
-  bot.command('upload', async (ctx) => {
-    const userId = ctx.message?.from?.id;
-    if (String(model?.telegram_id) !== String(userId)) {
-      return ctx.reply('⛔ Nur das Model darf Medien hochladen.');
-    }
-
-    return ctx.reply('📸 Bitte sende mir jetzt ein Foto oder Video, das du hochladen möchtest.');
-  });
-
-  // === Callback-Buttons (z. B. Medien löschen) ===
-  bot.on('callback_query', async (ctx) => {
-    const userId = ctx.callbackQuery?.from?.id;
-    if (!userId) return;
-
-    const callbackData = ctx.callbackQuery?.data;
-
-    // Nur Models dürfen Medien löschen
-    if (model?.telegram_id === userId && callbackData?.startsWith('delete_')) {
-      const mediaId = callbackData.replace('delete_', '');
-
-      const { error } = await model.supabase
-        .from('media')
-        .delete()
-        .eq('id', mediaId)
-        .eq('model_id', model.id);
-
-      if (error) {
-        await ctx.answerCbQuery('❌ Fehler beim Löschen.');
-      } else {
-        await ctx.answerCbQuery('✅ Gelöscht!');
-        await ctx.deleteMessage().catch(() => {});
-      }
-    } else {
-      await ctx.answerCbQuery('⛔ Keine Berechtigung oder ungültige Aktion.');
-    }
   });
 }

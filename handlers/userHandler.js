@@ -3,51 +3,44 @@ import { supabase } from '../utils/supabase.js';
 import { saveMessage } from '../db/conv.js';
 import { getNextMediaInSequence } from '../utils/mediaSelector.js';
 
+/**
+ * Verarbeitet Nutzereingaben und generiert GPT-Antworten inkl. Szenenlogik
+ */
 export async function handleUserMessage(ctx, user, model) {
   const userInput = ctx.message?.text;
-  if (!userInput || !model) return;
-
   const userId = user?.id;
+
+  if (!userInput || !model || !userId) return;
 
   try {
     await ctx.sendChatAction('typing');
 
-    // Speichere Nutzereingabe
+    const currentScene = user.current_scene || 'default';
+
+    // Eingabe speichern
     await saveMessage(userId, model.id, userInput, true);
 
-    // Sonderfall: Bild direkt anfordern
-    if (userInput.toLowerCase().includes('bild')) {
-      const media = await getNextMediaInSequence(model.id, 'default');
-
-      if (media?.signedUrl) {
-        await ctx.replyWithPhoto({ url: media.signedUrl }, {
-          caption: media.caption || '📸 Für dich 💋'
-        });
-        await saveMessage(userId, model.id, '[Bild gesendet]', false);
-      } else {
-        await ctx.reply('📭 Leider kein Bild mehr verfügbar…');
-      }
-      return;
-    }
-
-    // GPT-Antwort generieren
-    const reply = await generateReply(userInput, model);
+    // Antwort generieren
+    const reply = await generateReply(userInput, model, currentScene);
     await ctx.reply(reply);
     await saveMessage(userId, model.id, reply, false);
 
-    // Passendes Medium zur Szene senden
-    await sendMatchingMedia(ctx, model, userId);
+    // Medien nur senden, wenn Szene ≠ "Standard"
+    if (currentScene.toLowerCase() !== 'standard') {
+      await sendMatchingMedia(ctx, model, userId, currentScene);
+    }
 
   } catch (err) {
-    console.error('❌ GPT-Fehler:', err.message);
-    await ctx.reply('❌ Da ging was schief beim Nachdenken...');
+    console.error('❌ Fehler in handleUserMessage:', err.message);
+    await ctx.reply('😵‍💫 Irgendwas lief gerade schief. Versuchs gleich nochmal!');
   }
 }
 
-async function sendMatchingMedia(ctx, model, userId) {
+/**
+ * Holt und sendet ein passendes Medium für die Szene
+ */
+async function sendMatchingMedia(ctx, model, userId, scene = 'default') {
   try {
-    const scene = model.last_scene || 'default';
-
     const { data, error } = await supabase
       .from('media')
       .select('*')
@@ -62,7 +55,6 @@ async function sendMatchingMedia(ctx, model, userId) {
 
     const media = data[0];
 
-    // Signed URL erzeugen
     const { data: signed, error: signedError } = await supabase.storage
       .from('model-media')
       .createSignedUrl(media.file_url, 60 * 60 * 24);
@@ -86,11 +78,10 @@ async function sendMatchingMedia(ctx, model, userId) {
         break;
     }
 
-    // Als verwendet markieren & speichern
     await supabase.from('media').update({ used: true }).eq('id', media.id);
     await saveMessage(userId, model.id, `[${media.type} gesendet]`, false);
 
   } catch (err) {
-    console.error('❌ Medienversand fehlgeschlagen:', err.message);
+    console.error('❌ Fehler beim Medienversand:', err.message);
   }
 }
