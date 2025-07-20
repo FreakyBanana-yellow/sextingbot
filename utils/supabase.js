@@ -84,3 +84,18 @@ export async function getUserByTelegramId(telegramId) {
 
   return data;
 }
+
+/**
+ * Aktualisiert die aktuelle Szene des Users
+ */
+export async function updateUserScene(userTelegramId, scene) {
+  const { error } = await supabase
+    .from('users')
+    .update({ current_scene: scene })
+    .eq('telegram_id', userTelegramId);
+
+  if (error) {
+    console.error('❌ Fehler beim Update der Szene:', error);
+    throw error;
+  }
+}
