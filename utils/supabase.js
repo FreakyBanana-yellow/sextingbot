@@ -37,20 +37,50 @@ export async function getModelByTelegramId(telegramId) {
     .eq('telegram_id', telegramId)
     .single();
 
-  if (error) return null;
+  if (error) {
+    console.error('❌ Fehler bei getModelByTelegramId:', error.message);
+    return null;
+  }
+
   return data;
 }
 
 /**
- * Holt einen User anhand der Telegram-ID
+ * Holt oder erstellt einen User anhand der Telegram-ID
  */
 export async function getUserByTelegramId(telegramId) {
+  if (!telegramId) {
+    console.error('❌ Telegram ID fehlt.');
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('telegram_id', telegramId)
     .single();
 
-  if (error) return null;
+  if (error && error.code !== 'PGRST116') {
+    console.error('❌ Fehler beim Abrufen des Users:', error.message);
+    return null;
+  }
+
+  // User existiert nicht → neu anlegen
+  if (!data) {
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert([{ telegram_id: telegramId }])
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('❌ Fehler beim Anlegen des Users:', insertError.message);
+      return null;
+    }
+
+    console.log('🆕 Neuer User angelegt:', newUser.id);
+    return newUser;
+  }
+
   return data;
 }
