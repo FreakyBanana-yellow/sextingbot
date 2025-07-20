@@ -10,7 +10,7 @@ import fetch from 'node-fetch'; // Nur nötig, falls Node < 18
  */
 export async function uploadMedia(fileId, type, modelId, telegram) {
   try {
-    // Telegram-Datei holen
+    // 1. Telegram-Datei abrufen
     const fileLink = await telegram.getFileLink(fileId);
     const res = await fetch(fileLink.href);
 
@@ -26,7 +26,7 @@ export async function uploadMedia(fileId, type, modelId, telegram) {
     const filename = `${Date.now()}.${ext}`;
     const path = `${modelId}/${type}/${filename}`;
 
-    // Upload zu Supabase Storage
+    // 2. Upload zu Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from('model-media')
       .upload(path, buffer, {
@@ -39,26 +39,29 @@ export async function uploadMedia(fileId, type, modelId, telegram) {
       return { success: false };
     }
 
-    // Optional: als public URL verfügbar machen
+    // 3. Erstelle eine signierte URL (z. B. für Anzeige in Telegram)
     const { data: signedData, error: signedError } = await supabase.storage
       .from('model-media')
       .createSignedUrl(path, 60 * 60 * 24); // 24h gültig
 
     if (signedError) {
       console.error('❌ Fehler bei Signed URL:', signedError);
+      return { success: false };
     }
 
-    // Pfad in DB speichern (z. B. in media-Tabelle)
-    const { data, error: dbError } = await supabase
+    // 4. Speicherpfad in der media-Tabelle sichern
+    const { error: dbError } = await supabase
       .from('media')
       .insert([{
         model_id: modelId,
-        file_url: path, // Wichtig: Speicherpfad, nicht vollständige URL
-        type: type,
+        type,
+        url: signedData.signedUrl,      // Speichere direkt die URL
+        file_url: path,                 // optional: roher Pfad zur Datei
         uploaded_at: new Date(),
         auto_use: true,
         used: false,
-        scene: 'default'
+        scene: 'default',
+        caption: null
       }]);
 
     if (dbError) {
@@ -69,7 +72,7 @@ export async function uploadMedia(fileId, type, modelId, telegram) {
     return {
       success: true,
       file_url: path,
-      signed_url: signedData?.signedUrl || null,
+      signed_url: signedData.signedUrl,
     };
 
   } catch (err) {

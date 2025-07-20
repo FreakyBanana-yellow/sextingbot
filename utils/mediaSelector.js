@@ -1,6 +1,15 @@
 import { supabase } from '../supabase/client.js';
 
+/**
+ * Holt das nächste ungenutzte Medium in der Reihenfolge für eine Szene
+ * und erzeugt eine gültige signed URL.
+ */
 export async function getNextMediaInSequence(modelId, scene = 'default') {
+  if (!modelId) {
+    console.error('❌ modelId fehlt bei getNextMediaInSequence');
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('media')
     .select('*')
@@ -16,8 +25,8 @@ export async function getNextMediaInSequence(modelId, scene = 'default') {
     return null;
   }
 
-  if (!data?.length) {
-    console.warn('⚠️ Keine weiteren Medien in dieser Szene verfügbar.');
+  if (!data || data.length === 0) {
+    console.warn(`⚠️ Keine Medien mehr in Szene "${scene}" verfügbar.`);
     return null;
   }
 
@@ -26,18 +35,22 @@ export async function getNextMediaInSequence(modelId, scene = 'default') {
   // Signed URL erzeugen
   const { data: signed, error: urlError } = await supabase.storage
     .from('model-media')
-    .createSignedUrl(media.file_url, 60 * 60 * 24); // 24h gültig
+    .createSignedUrl(media.file_url, 60 * 60 * 24); // 24h
 
   if (urlError || !signed?.signedUrl) {
-    console.error('❌ Fehler beim Erzeugen der signed URL:', urlError);
+    console.error('❌ Fehler bei createSignedUrl:', urlError);
     return null;
   }
 
-  // Als verwendet markieren
-  await supabase
+  // Markiere Medium als verwendet
+  const { error: updateError } = await supabase
     .from('media')
     .update({ used: true })
     .eq('id', media.id);
+
+  if (updateError) {
+    console.error('⚠️ Medium konnte nicht als verwendet markiert werden:', updateError);
+  }
 
   return {
     ...media,
@@ -45,8 +58,15 @@ export async function getNextMediaInSequence(modelId, scene = 'default') {
   };
 }
 
-// Szene zurücksetzen
+/**
+ * Setzt alle Medien einer Szene auf 'nicht verwendet'
+ */
 export async function resetScene(modelId, scene = 'default') {
+  if (!modelId) {
+    console.error('❌ modelId fehlt bei resetScene');
+    return;
+  }
+
   const { error } = await supabase
     .from('media')
     .update({ used: false })
@@ -55,5 +75,7 @@ export async function resetScene(modelId, scene = 'default') {
 
   if (error) {
     console.error('❌ Fehler beim Zurücksetzen der Szene:', error);
+  } else {
+    console.log(`🔄 Szene "${scene}" für Model ${modelId} wurde zurückgesetzt.`);
   }
 }
