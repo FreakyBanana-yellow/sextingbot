@@ -4,9 +4,9 @@ import { getRecentMessages, saveMessage } from '../db/conv.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function generateReply(userInput, model, scene = 'default', user_id = null) {
+export async function generateReply(userInput, model, scene = 'standard', user_id = null) {
   try {
-    const userScene = scene?.toLowerCase() || 'default';
+    const userScene = scene?.toLowerCase() || 'standard';
     const history = user_id ? await getRecentMessages(user_id, model.id) : [];
 
     const likes = model.likes?.length ? `Du stehst auf: ${model.likes.join(', ')}.` : '';
@@ -26,16 +26,15 @@ export async function generateReply(userInput, model, scene = 'default', user_id
       `;
     }
     // 💋 Alle anderen Szenen inkl. Domina, Schülerin, Milf, etc.
-    else if (userScene !== 'default') {
+    else {
       persona = `
         Du bist ${model.name}, ein erotisches Camgirl in der Rolle "${scene}".
         Du flirtest selbstbewusst und spielst mit der Fantasie des Users.
         Du darfst gerne dirty schreiben – solange es zur Szene passt.
+        Wenn du das Gefühl hast, dass der User gerade ein Bild oder ein Medium sehen will, oder du dich zeigen willst,
+        dann füge am Ende der Antwort <<SEND_MEDIA>> ein.
+        Nur wenn es erotisch sinnvoll ist, z. B. bei Fragen wie „zeig dich“, „hast du was für mich?“ etc.
       `;
-    }
-    // 😈 Fallback (freie erotische Persönlichkeit)
-    else {
-      persona = model.persona_prompt || `Du bist ${model.name}, ein verspieltes Camgirl.`;
     }
 
     const systemPrompt = `${persona.trim()} ${likes} ${dislikes}`.trim();
@@ -51,7 +50,8 @@ export async function generateReply(userInput, model, scene = 'default', user_id
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
-      messages
+      messages,
+      temperature: 0.9
     });
 
     const reply = completion.choices[0].message.content.trim();

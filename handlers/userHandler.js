@@ -17,17 +17,22 @@ export async function handleUserMessage(ctx, user, model) {
 
     const currentScene = user.current_scene || 'standard';
 
-
     // Eingabe speichern
     await saveMessage(userId, model.id, userInput, true);
 
     // Antwort generieren
-    const reply = await generateReply(userInput, model, currentScene, userId);
+    const rawReply = await generateReply(userInput, model, currentScene, userId);
+
+    // Medien-Signal extrahieren
+    const sendMedia = rawReply.includes('<<SEND_MEDIA>>');
+    const reply = rawReply.replace('<<SEND_MEDIA>>', '').trim();
+
+    // Antwort senden
     await ctx.reply(reply);
     await saveMessage(userId, model.id, reply, false);
 
-    // Medien nur senden, wenn Szene ≠ "Standard"
-    if (currentScene.toLowerCase() !== 'standard') {
+    // Nur wenn explizit angefordert
+    if (sendMedia) {
       await sendMatchingMedia(ctx, model, userId, currentScene);
     }
 
@@ -40,7 +45,7 @@ export async function handleUserMessage(ctx, user, model) {
 /**
  * Holt und sendet ein passendes Medium für die Szene
  */
-async function sendMatchingMedia(ctx, model, userId, scene = 'default') {
+async function sendMatchingMedia(ctx, model, userId, scene = 'standard') {
   try {
     const { data, error } = await supabase
       .from('media')
