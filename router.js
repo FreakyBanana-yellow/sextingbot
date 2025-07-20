@@ -82,7 +82,7 @@ export function applyRouter(bot, model) {
     // Nutzerbild explizit anfordern
     if (!isModel && msgText.includes('bild')) {
       const user = await getUserByTelegramId(userId);
-      const scene = user?.current_scene || 'default';
+      const scene = user?.current_scene || 'standard';
       const media = await getNextMediaInSequence(model.id, scene);
 
       if (!media?.signedUrl) return ctx.reply('📭 Kein Bild verfügbar.');

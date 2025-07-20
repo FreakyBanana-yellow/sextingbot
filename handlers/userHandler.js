@@ -15,13 +15,14 @@ export async function handleUserMessage(ctx, user, model) {
   try {
     await ctx.sendChatAction('typing');
 
-    const currentScene = user.current_scene || 'default';
+    const currentScene = user.current_scene || 'standard';
+
 
     // Eingabe speichern
     await saveMessage(userId, model.id, userInput, true);
 
     // Antwort generieren
-    const reply = await generateReply(userInput, model, currentScene);
+    const reply = await generateReply(userInput, model, currentScene, userId);
     await ctx.reply(reply);
     await saveMessage(userId, model.id, reply, false);
 
