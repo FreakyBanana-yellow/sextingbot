@@ -11,21 +11,49 @@ export async function getNextMediaInSequence(modelId, scene = 'default') {
     .order('sequence', { ascending: true })
     .limit(1);
 
-  if (error || !data?.length) return null;
+  if (error) {
+    console.error('❌ Fehler beim Abrufen von Medien:', error);
+    return null;
+  }
 
-  // Markiere als verwendet
-  await supabase.from('media')
+  if (!data?.length) {
+    console.warn('⚠️ Keine weiteren Medien in dieser Szene verfügbar.');
+    return null;
+  }
+
+  const media = data[0];
+
+  // Signed URL erzeugen
+  const { data: signed, error: urlError } = await supabase.storage
+    .from('model-media')
+    .createSignedUrl(media.file_url, 60 * 60 * 24); // 24h gültig
+
+  if (urlError || !signed?.signedUrl) {
+    console.error('❌ Fehler beim Erzeugen der signed URL:', urlError);
+    return null;
+  }
+
+  // Als verwendet markieren
+  await supabase
+    .from('media')
     .update({ used: true })
-    .eq('id', data[0].id);
+    .eq('id', media.id);
 
-  return data[0];
+  return {
+    ...media,
+    signedUrl: signed.signedUrl,
+  };
 }
 
-// Optional: Alle Medien einer Szene zurücksetzen (z. B. wenn neuer User)
+// Szene zurücksetzen
 export async function resetScene(modelId, scene = 'default') {
-  await supabase
+  const { error } = await supabase
     .from('media')
     .update({ used: false })
     .eq('model_id', modelId)
     .eq('scene', scene);
+
+  if (error) {
+    console.error('❌ Fehler beim Zurücksetzen der Szene:', error);
+  }
 }
